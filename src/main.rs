@@ -149,7 +149,7 @@ fn test_clamp() {
   assert_eq!(clamp(0.31416), 0.31416);
 }
 
-fn toInt(x: f64) -> u8 {
+fn to_int(x: f64) -> u8 {
   (f64::powf(clamp(x), 1.0 / 2.2) * 255.0 + 0.5) as u8
 }
 
@@ -220,7 +220,7 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
           radiance(&ray, depth + 1, xi, spheres)
         },
         _ => {
-          let reflRay = Ray { o: x, d: r.d - nl * 2.0 * nl.dot(r.d) };
+          let reflection = Ray { o: x, d: r.d - nl * 2.0 * nl.dot(r.d) };
           let into = n.dot(nl) > 0.0;
           let nc = 1.0;
           let nt = 1.5;
@@ -228,7 +228,7 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
           let ddn = r.d.dot(nl);
           let cos2t = 1.0 - nnt * nnt * (1.0 - ddn * ddn);
           if cos2t < 0.0 {
-            obj.e + f.mult(radiance(&reflRay, depth + 1, xi, spheres))
+            obj.e + f.mult(radiance(&reflection, depth + 1, xi, spheres))
           } else {
             let tdir = (r.d * nnt - n * (if into { 1.0 } else { -1.0 }
                        * (ddn * nnt + cos2t.sqrt()))).norm();
@@ -244,12 +244,12 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
             let tp = tr / (1.0 - p);
             let russian = if depth > 1 {
               if rand::random::<f64>() < p {
-                radiance(&reflRay, depth + 1, xi, spheres) * rp
+                radiance(&reflection, depth + 1, xi, spheres) * rp
               } else {
                 radiance(&ray, depth + 1, xi, spheres) * tp
               }
             } else {
-              radiance(&reflRay, depth + 1, xi, spheres) * re
+              radiance(&reflection, depth + 1, xi, spheres) * re
                 + radiance(&ray, depth + 1, xi, spheres) * tr
             };
             russian
@@ -327,9 +327,11 @@ fn main() {
 
   let filename = format!("images/rs.{}.ppm", samples);
   let mut f = BufWriter::new(fs::File::create(filename).unwrap());
-  f.write(format!("P3\n{} {}\n{}\n", width, height, 255).as_bytes());
+  f.write(format!("P3\n{} {}\n{}\n", width, height, 255).as_bytes())
+   .expect("Failed to write PPM header");
   for color in pixels {
-    f.write(format!("{} {} {} ", toInt(color.0), toInt(color.1), toInt(color.2)).as_bytes());
+    f.write(format!("{} {} {} ", to_int(color.0), to_int(color.1), to_int(color.2)).as_bytes())
+     .expect("Failed to write out PPM data.");
   }
 
 }
