@@ -1,13 +1,16 @@
+extern crate rand;
+extern crate rayon;
+
+use rayon::prelude::*;
+
 use std::str::FromStr;
-use std::io::{self, Write, BufWriter};
+use std::io::{Write, BufWriter};
 use std::fs;
 
 use std::ops::Add;
 use std::ops::Mul;
 use std::ops::Sub;
 use std::ops::Rem;
-
-extern crate rand;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 struct V(f64, f64, f64); // Fields cannot have default value atm: https://github.com/rust-lang/rfcs/pull/1806
@@ -181,8 +184,6 @@ fn intersect(r: &Ray, spheres: &[Sphere]) -> Option<(u32, f64)> {
    */
 }
 
-fn erand48(x: (u16, u16, u16)) -> f64 { rand::random::<f64>() }
-
 fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
   let est_radiance = match intersect(r, spheres) {
     None => V(0.0, 0.0, 0.0),
@@ -196,7 +197,7 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
       let p = 0.299 * f.0 + 0.587 * f.1 + 0.114 * f.2;
 
       if depth > 5 {
-        if erand48(xi) < p && depth < 100 {
+        if rand::random::<f64>() < p && depth < 100 {
           f = f * (1.0 / p)
         } else {
           return obj.e;
@@ -205,13 +206,13 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
 
       let ir = match obj.refl {
         Reflection::DIFF => {
-          let r1 = 2.0 * std::f64::consts::PI * erand48(xi);
-          let r2 = erand48(xi);
+          let r1 = 2.0 * std::f64::consts::PI * rand::random::<f64>();
+          let r2 = rand::random::<f64>();
           let r2s = r2.sqrt();
-          let wup = (if nl.0.abs() > 0.1 { V(0.0, 1.0, 0.0) } else { V(1.0, 0.0, 0.0) } % nl);
+          let wup = if nl.0.abs() > 0.1 { V(0.0, 1.0, 0.0) } else { V(1.0, 0.0, 0.0) } % nl;
           let tang = (nl % wup).norm();
           let bitang = (nl % tang).norm();
-          let d = (tang * r1.cos() * r2s + bitang * r1.sin() * r2s + nl * (1.0 - r2).sqrt());
+          let d = tang * r1.cos() * r2s + bitang * r1.sin() * r2s + nl * (1.0 - r2).sqrt();
           radiance(&Ray { o: x, d: d.norm() }, depth + 1, xi, spheres)
         },
         Reflection::SPEC => {
@@ -242,7 +243,7 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
             let rp = re / p;
             let tp = tr / (1.0 - p);
             let russian = if depth > 1 {
-              if erand48(xi) < p {
+              if rand::random::<f64>() < p {
                 radiance(&reflRay, depth + 1, xi, spheres) * rp
               } else {
                 radiance(&ray, depth + 1, xi, spheres) * tp
@@ -284,39 +285,50 @@ fn main() {
   let cam = Ray { o: V(50.0, 52.0, 295.6), d: V(0.0, -0.042612, -1.0).norm() };
   let cx = V(width as f64 * 0.5135 / height as f64, 0.0, 0.0);
   let cy = (cx % cam.d).norm() * 0.5135;
-  let mut c = vec![V(0.0, 0.0, 0.0); width * height];
-  for y in 0..height {
-    print!("\rRendering ({} spp) {:10.7}%", samples * 4,
-           100.0 * (y as f64 / (height - 1) as f64));
-    std::io::stdout().flush().unwrap();
-    let xi = (0u16, 0u16, (y * y * y) as u16);
-    for x in 0..width {
-      let i = (height - y - 1) * width + x;
-      for sy in 0..2 {
-        for sx in 0..2 {
-          let mut r = V(0.0, 0.0, 0.0);
-          for s in 0..samples {
-            let r1 = 2.0 * erand48(xi);
-            let dx = if r1 < 1.0 { r1.sqrt() - 1.0 } else { 1.0 - (2.0 - r1).sqrt() };
-            let r2 = 2.0 * erand48(xi);
-            let dy = if r2 < 1.0 { r2.sqrt() - 1.0 } else { 1.0 - (2.0 - r2).sqrt() };
-            let d = cx * (((sx as f64 + 0.5 + dx) / 2.0 + x as f64) / width as f64 - 0.5)
-                  + cy * (((sy as f64 + 0.5 + dy) / 2.0 + y as f64) / height as f64 - 0.5)
-                  + cam.d;
-            let ray2 = Ray { o: cam.o + d * 130.0, d: d.norm() };
-            r = r + radiance(&ray2, 0, xi, &spheres) * (0.0025 / samples as f64);
-            c[i] = c[i] + V(clamp(r.0), clamp(r.1), clamp(r.2)) * 0.25;
-          }
+  let mut pixels = vec![V(0.0, 0.0, 0.0); width * height];
+
+  let calc_pixel_value = |x, y| {
+    let mut c = V(0.0, 0.0, 0.0);
+    for sy in 0..2 {
+      for sx in 0..2 {
+        let mut r = V(0.0, 0.0, 0.0);
+        for _ in 0..samples {
+          let r1 = 2.0 * rand::random::<f64>();
+          let dx = if r1 < 1.0 { r1.sqrt() - 1.0 } else { 1.0 - (2.0 - r1).sqrt() };
+          let r2 = 2.0 * rand::random::<f64>();
+          let dy = if r2 < 1.0 { r2.sqrt() - 1.0 } else { 1.0 - (2.0 - r2).sqrt() };
+          let d = cx * (((sx as f64 + 0.5 + dx) / 2.0 + x as f64) / width as f64 - 0.5)
+                + cy * (((sy as f64 + 0.5 + dy) / 2.0 + y as f64) / height as f64 - 0.5)
+                + cam.d;
+          let ray2 = Ray { o: cam.o + d * 130.0, d: d.norm() };
+          r = r + radiance(&ray2, 0, (0,0,0), &spheres) * (1.0 / (samples * 50) as f64);
+          c = c + V(clamp(r.0), clamp(r.1), clamp(r.2)) * 0.25;
         }
       }
     }
+    c
+  };
+
+  {
+    let bands: Vec<(usize, &mut[V])> = pixels.chunks_mut(width).enumerate().collect();
+    bands.into_par_iter().for_each(|(y, band)| {
+      print!("\rRendering ({} spp) {:10.7}%", samples * 4,
+            100.0 * (y as f64 / (height - 1) as f64));
+      std::io::stdout().flush().unwrap();
+
+      (0..band.len()).zip(band).for_each(|(x, buf)| {
+        let _i = (height - y - 1) * width + x;
+        *buf = calc_pixel_value(x, height - y);
+      });
+    });
   }
+
   println!("\nRendering completed. Saving into a file...");
 
   let filename = format!("images/rs.{}.ppm", samples);
   let mut f = BufWriter::new(fs::File::create(filename).unwrap());
   f.write(format!("P3\n{} {}\n{}\n", width, height, 255).as_bytes());
-  for color in c {
+  for color in pixels {
     f.write(format!("{} {} {} ", toInt(color.0), toInt(color.1), toInt(color.2)).as_bytes());
   }
 
