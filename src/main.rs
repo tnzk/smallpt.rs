@@ -164,24 +164,6 @@ fn intersect(r: &Ray, spheres: &[Sphere]) -> Option<(u32, f64)> {
     Some(tpl) => Some(tpl),
     _ => None,
   }
-  // */
-  /*
-  let mut res = (0, std::f64::INFINITY);
-  for s in 0..spheres.len() {
-    let t = spheres[s].intersect(r);
-    let (_, prev_t) = res;
-    if t < prev_t && t > 1e-4 {
-      res = (s, t);
-    }
-  }
-
-  let (index, t) = res;
-  if t == std::f64::INFINITY {
-    None
-  } else {
-    Some((index as u32, t))
-  }
-   */
 }
 
 fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
@@ -264,15 +246,15 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
 
 fn main() {
   let spheres = [
-    Sphere { rad: 1e5, p: V(1e5+1.0,40.8,81.6), e: V(0.0,0.0,0.0), c: V(0.75,0.25,0.25), refl: Reflection::DIFF }, //Left
-    Sphere { rad: 1e5,  p: V(-1e5+99.0,40.8,81.6),e: V(0.0,0.0,0.0), c: V(0.25,0.25,0.75), refl: Reflection::DIFF},//Rght
-    Sphere { rad: 1e5,  p: V(50.0, 40.8, 1e5),    e: V(0.0,0.0,0.0), c: V(0.75,0.75,0.75), refl: Reflection::DIFF},//Back
-    Sphere { rad: 1e5,  p: V(50.0, 40.8,-1e5+170.0),e: V(0.0,0.0,0.0),c:V(0.0,0.0,0.0),   refl: Reflection::DIFF},//Frnt
-    Sphere { rad: 1e5,  p: V(50.0,  1e5, 81.6),   e: V(0.0,0.0,0.0), c:V(0.75,0.75,0.75), refl: Reflection::DIFF},//Botm
-    Sphere { rad: 1e5,  p: V(50.0, -1e5+81.6,81.6),e:V(0.0,0.0,0.0),c:V(0.75,0.75,0.75), refl: Reflection::DIFF},//Top
-    Sphere { rad: 16.5, p: V(27.0, 16.5,47.0),      e: V(0.0,0.0,0.0),c:V(1.0,1.0,1.0)*0.999,  refl: Reflection::SPEC},//Mirr
-    Sphere { rad: 16.5, p: V(73.0, 16.5,78.0),       e:V(0.0,0.0,0.0),c:V(1.0,1.0,1.0)*0.999,  refl: Reflection::REFR},//Glas
-    Sphere { rad: 600.0,  p: V(50.0, 681.6-0.27, 81.6),e:V(12.0,12.0,12.0),  c: V(0.0,0.0,0.0),  refl: Reflection::DIFF} //Lite
+    Sphere { rad: 1e5,   p: V( 1e5+1.0,  40.8,      81.6),       e: V(0.0,0.0,0.0),    c: V(0.75,0.25,0.25),    refl: Reflection::DIFF }, //Left
+    Sphere { rad: 1e5,   p: V(-1e5+99.0, 40.8,      81.6),       e: V(0.0,0.0,0.0),    c: V(0.25,0.25,0.75),    refl: Reflection::DIFF },//Rght
+    Sphere { rad: 1e5,   p: V(50.0,      40.8,       1e5),       e: V(0.0,0.0,0.0),    c: V(0.75,0.75,0.75),    refl: Reflection::DIFF },//Back
+    Sphere { rad: 1e5,   p: V(50.0,      40.8,      -1e5+170.0), e: V(0.0,0.0,0.0),    c: V(0.0,0.0,0.0),       refl: Reflection::DIFF },//Frnt
+    Sphere { rad: 1e5,   p: V(50.0,       1e5,      81.6),       e: V(0.0,0.0,0.0),    c: V(0.75,0.75,0.75),    refl: Reflection::DIFF },//Botm
+    Sphere { rad: 1e5,   p: V(50.0,      -1e5+81.6, 81.6),       e: V(0.0,0.0,0.0),    c: V(0.75,0.75,0.75),    refl: Reflection::DIFF },//Top
+    Sphere { rad: 16.5,  p: V(27.0,      16.5,      47.0),       e: V(0.0,0.0,0.0),    c: V(1.0,1.0,1.0)*0.999, refl: Reflection::SPEC },//Mirr
+    Sphere { rad: 16.5,  p: V(73.0,      16.5,      78.0),       e: V(0.0,0.0,0.0),    c: V(1.0,1.0,1.0)*0.999, refl: Reflection::REFR },//Glas
+    Sphere { rad: 600.0, p: V(50.0,     681.6-0.27, 81.6),       e: V(12.0,12.0,12.0), c: V(0.0,0.0,0.0),       refl: Reflection::DIFF } //Lite
   ];
 
   let width = 1024;
@@ -312,14 +294,17 @@ fn main() {
   {
     let bands: Vec<(usize, &mut[V])> = pixels.chunks_mut(width).enumerate().collect();
     bands.into_par_iter().for_each(|(y, band)| {
+      /* Broken with Rayon
       print!("\rRendering ({} spp) {:10.7}%", samples * 4,
             100.0 * (y as f64 / (height - 1) as f64));
       std::io::stdout().flush().unwrap();
-
+      */
       (0..band.len()).zip(band).for_each(|(x, buf)| {
         let _i = (height - y - 1) * width + x;
         *buf = calc_pixel_value(x, height - y);
       });
+      print!(".");
+      std::io::stdout().flush().unwrap();
     });
   }
 
