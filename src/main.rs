@@ -136,13 +136,8 @@ impl Sphere {
   }
 }
 
-// 三項演算子はパターンマッチできれいに書ける場合がある
 fn clamp(x: f64) -> f64 {
-  match x {
-    x if x < 0.0 => 0.0,
-    x if x > 1.0 => 1.0,
-    _ => x,
-  }
+  x.min(1.0).max(0.0)
 }
 #[test]
 fn test_clamp() {
@@ -309,7 +304,7 @@ fn main() {
                   + cy * (((sy as f64 + 0.5 + dy) / 2.0 + y as f64) / height as f64 - 0.5)
                   + cam.d;
             let ray2 = Ray { o: cam.o + d * 130.0, d: d.norm() };
-            r = r + radiance(&ray2, 0, xi, &spheres) * (0.25 / samples as f64);
+            r = r + radiance(&ray2, 0, xi, &spheres) * (0.0025 / samples as f64);
             c[i] = c[i] + V(clamp(r.0), clamp(r.1), clamp(r.2)) * 0.25;
           }
         }
@@ -318,7 +313,8 @@ fn main() {
   }
   println!("\nRendering completed. Saving into a file...");
 
-  let mut f = BufWriter::new(fs::File::create("rs.ppm").unwrap());
+  let filename = format!("images/rs.{}.ppm", samples);
+  let mut f = BufWriter::new(fs::File::create(filename).unwrap());
   f.write(format!("P3\n{} {}\n{}\n", width, height, 255).as_bytes());
   for color in c {
     f.write(format!("{} {} {} ", toInt(color.0), toInt(color.1), toInt(color.2)).as_bytes());
