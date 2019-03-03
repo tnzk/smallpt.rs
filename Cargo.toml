@@ -5,3 +5,4 @@ authors = ["tnzk <tnzk.marge@gmail.com>"]
 
 [dependencies]
 rand = "*"
+rayon = "1.0.0"

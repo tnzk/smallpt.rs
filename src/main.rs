@@ -1,13 +1,16 @@
+extern crate rand;
+extern crate rayon;
+
+use rayon::prelude::*;
+
 use std::str::FromStr;
-use std::io::{self, Write, BufWriter};
+use std::io::{Write, BufWriter};
 use std::fs;
 
 use std::ops::Add;
 use std::ops::Mul;
 use std::ops::Sub;
 use std::ops::Rem;
-
-extern crate rand;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 struct V(f64, f64, f64); // Fields cannot have default value atm: https://github.com/rust-lang/rfcs/pull/1806
@@ -136,13 +139,8 @@ impl Sphere {
   }
 }
 
-// 三項演算子はパターンマッチできれいに書ける場合がある
 fn clamp(x: f64) -> f64 {
-  match x {
-    x if x < 0.0 => 0.0,
-    x if x > 1.0 => 1.0,
-    _ => x,
-  }
+  x.min(1.0).max(0.0)
 }
 #[test]
 fn test_clamp() {
@@ -151,7 +149,7 @@ fn test_clamp() {
   assert_eq!(clamp(0.31416), 0.31416);
 }
 
-fn toInt(x: f64) -> u8 {
+fn to_int(x: f64) -> u8 {
   (f64::powf(clamp(x), 1.0 / 2.2) * 255.0 + 0.5) as u8
 }
 
@@ -166,27 +164,7 @@ fn intersect(r: &Ray, spheres: &[Sphere]) -> Option<(u32, f64)> {
     Some(tpl) => Some(tpl),
     _ => None,
   }
-  // */
-  /*
-  let mut res = (0, std::f64::INFINITY);
-  for s in 0..spheres.len() {
-    let t = spheres[s].intersect(r);
-    let (_, prev_t) = res;
-    if t < prev_t && t > 1e-4 {
-      res = (s, t);
-    }
-  }
-
-  let (index, t) = res;
-  if t == std::f64::INFINITY {
-    None
-  } else {
-    Some((index as u32, t))
-  }
-   */
 }
-
-fn erand48(x: (u16, u16, u16)) -> f64 { rand::random::<f64>() }
 
 fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
   let est_radiance = match intersect(r, spheres) {
@@ -201,7 +179,7 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
       let p = 0.299 * f.0 + 0.587 * f.1 + 0.114 * f.2;
 
       if depth > 5 {
-        if erand48(xi) < p && depth < 100 {
+        if rand::random::<f64>() < p && depth < 100 {
           f = f * (1.0 / p)
         } else {
           return obj.e;
@@ -210,13 +188,13 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
 
       let ir = match obj.refl {
         Reflection::DIFF => {
-          let r1 = 2.0 * std::f64::consts::PI * erand48(xi);
-          let r2 = erand48(xi);
+          let r1 = 2.0 * std::f64::consts::PI * rand::random::<f64>();
+          let r2 = rand::random::<f64>();
           let r2s = r2.sqrt();
-          let wup = (if nl.0.abs() > 0.1 { V(0.0, 1.0, 0.0) } else { V(1.0, 0.0, 0.0) } % nl);
+          let wup = if nl.0.abs() > 0.1 { V(0.0, 1.0, 0.0) } else { V(1.0, 0.0, 0.0) } % nl;
           let tang = (nl % wup).norm();
           let bitang = (nl % tang).norm();
-          let d = (tang * r1.cos() * r2s + bitang * r1.sin() * r2s + nl * (1.0 - r2).sqrt());
+          let d = tang * r1.cos() * r2s + bitang * r1.sin() * r2s + nl * (1.0 - r2).sqrt();
           radiance(&Ray { o: x, d: d.norm() }, depth + 1, xi, spheres)
         },
         Reflection::SPEC => {
@@ -224,7 +202,7 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
           radiance(&ray, depth + 1, xi, spheres)
         },
         _ => {
-          let reflRay = Ray { o: x, d: r.d - nl * 2.0 * nl.dot(r.d) };
+          let reflection = Ray { o: x, d: r.d - nl * 2.0 * nl.dot(r.d) };
           let into = n.dot(nl) > 0.0;
           let nc = 1.0;
           let nt = 1.5;
@@ -232,7 +210,7 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
           let ddn = r.d.dot(nl);
           let cos2t = 1.0 - nnt * nnt * (1.0 - ddn * ddn);
           if cos2t < 0.0 {
-            obj.e + f.mult(radiance(&reflRay, depth + 1, xi, spheres))
+            obj.e + f.mult(radiance(&reflection, depth + 1, xi, spheres))
           } else {
             let tdir = (r.d * nnt - n * (if into { 1.0 } else { -1.0 }
                        * (ddn * nnt + cos2t.sqrt()))).norm();
@@ -247,13 +225,13 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
             let rp = re / p;
             let tp = tr / (1.0 - p);
             let russian = if depth > 1 {
-              if erand48(xi) < p {
-                radiance(&reflRay, depth + 1, xi, spheres) * rp
+              if rand::random::<f64>() < p {
+                radiance(&reflection, depth + 1, xi, spheres) * rp
               } else {
                 radiance(&ray, depth + 1, xi, spheres) * tp
               }
             } else {
-              radiance(&reflRay, depth + 1, xi, spheres) * re
+              radiance(&reflection, depth + 1, xi, spheres) * re
                 + radiance(&ray, depth + 1, xi, spheres) * tr
             };
             russian
@@ -268,15 +246,15 @@ fn radiance(r: &Ray, depth: i32, xi: (u16, u16, u16), spheres: &[Sphere]) -> V {
 
 fn main() {
   let spheres = [
-    Sphere { rad: 1e5, p: V(1e5+1.0,40.8,81.6), e: V(0.0,0.0,0.0), c: V(0.75,0.25,0.25), refl: Reflection::DIFF }, //Left
-    Sphere { rad: 1e5,  p: V(-1e5+99.0,40.8,81.6),e: V(0.0,0.0,0.0), c: V(0.25,0.25,0.75), refl: Reflection::DIFF},//Rght
-    Sphere { rad: 1e5,  p: V(50.0, 40.8, 1e5),    e: V(0.0,0.0,0.0), c: V(0.75,0.75,0.75), refl: Reflection::DIFF},//Back
-    Sphere { rad: 1e5,  p: V(50.0, 40.8,-1e5+170.0),e: V(0.0,0.0,0.0),c:V(0.0,0.0,0.0),   refl: Reflection::DIFF},//Frnt
-    Sphere { rad: 1e5,  p: V(50.0,  1e5, 81.6),   e: V(0.0,0.0,0.0), c:V(0.75,0.75,0.75), refl: Reflection::DIFF},//Botm
-    Sphere { rad: 1e5,  p: V(50.0, -1e5+81.6,81.6),e:V(0.0,0.0,0.0),c:V(0.75,0.75,0.75), refl: Reflection::DIFF},//Top
-    Sphere { rad: 16.5, p: V(27.0, 16.5,47.0),      e: V(0.0,0.0,0.0),c:V(1.0,1.0,1.0)*0.999,  refl: Reflection::SPEC},//Mirr
-    Sphere { rad: 16.5, p: V(73.0, 16.5,78.0),       e:V(0.0,0.0,0.0),c:V(1.0,1.0,1.0)*0.999,  refl: Reflection::REFR},//Glas
-    Sphere { rad: 600.0,  p: V(50.0, 681.6-0.27, 81.6),e:V(12.0,12.0,12.0),  c: V(0.0,0.0,0.0),  refl: Reflection::DIFF} //Lite
+    Sphere { rad: 1e5,   p: V( 1e5+1.0,  40.8,      81.6),       e: V(0.0,0.0,0.0),    c: V(0.75,0.25,0.25),    refl: Reflection::DIFF }, //Left
+    Sphere { rad: 1e5,   p: V(-1e5+99.0, 40.8,      81.6),       e: V(0.0,0.0,0.0),    c: V(0.25,0.25,0.75),    refl: Reflection::DIFF },//Rght
+    Sphere { rad: 1e5,   p: V(50.0,      40.8,       1e5),       e: V(0.0,0.0,0.0),    c: V(0.75,0.75,0.75),    refl: Reflection::DIFF },//Back
+    Sphere { rad: 1e5,   p: V(50.0,      40.8,      -1e5+170.0), e: V(0.0,0.0,0.0),    c: V(0.0,0.0,0.0),       refl: Reflection::DIFF },//Frnt
+    Sphere { rad: 1e5,   p: V(50.0,       1e5,      81.6),       e: V(0.0,0.0,0.0),    c: V(0.75,0.75,0.75),    refl: Reflection::DIFF },//Botm
+    Sphere { rad: 1e5,   p: V(50.0,      -1e5+81.6, 81.6),       e: V(0.0,0.0,0.0),    c: V(0.75,0.75,0.75),    refl: Reflection::DIFF },//Top
+    Sphere { rad: 16.5,  p: V(27.0,      16.5,      47.0),       e: V(0.0,0.0,0.0),    c: V(1.0,1.0,1.0)*0.999, refl: Reflection::SPEC },//Mirr
+    Sphere { rad: 16.5,  p: V(73.0,      16.5,      78.0),       e: V(0.0,0.0,0.0),    c: V(1.0,1.0,1.0)*0.999, refl: Reflection::REFR },//Glas
+    Sphere { rad: 600.0, p: V(50.0,     681.6-0.27, 81.6),       e: V(12.0,12.0,12.0), c: V(0.0,0.0,0.0),       refl: Reflection::DIFF } //Lite
   ];
 
   let width = 1024;
@@ -289,39 +267,56 @@ fn main() {
   let cam = Ray { o: V(50.0, 52.0, 295.6), d: V(0.0, -0.042612, -1.0).norm() };
   let cx = V(width as f64 * 0.5135 / height as f64, 0.0, 0.0);
   let cy = (cx % cam.d).norm() * 0.5135;
-  let mut c = vec![V(0.0, 0.0, 0.0); width * height];
-  for y in 0..height {
-    print!("\rRendering ({} spp) {:10.7}%", samples * 4,
-           100.0 * (y as f64 / (height - 1) as f64));
-    std::io::stdout().flush().unwrap();
-    let xi = (0u16, 0u16, (y * y * y) as u16);
-    for x in 0..width {
-      let i = (height - y - 1) * width + x;
-      for sy in 0..2 {
-        for sx in 0..2 {
-          let mut r = V(0.0, 0.0, 0.0);
-          for s in 0..samples {
-            let r1 = 2.0 * erand48(xi);
-            let dx = if r1 < 1.0 { r1.sqrt() - 1.0 } else { 1.0 - (2.0 - r1).sqrt() };
-            let r2 = 2.0 * erand48(xi);
-            let dy = if r2 < 1.0 { r2.sqrt() - 1.0 } else { 1.0 - (2.0 - r2).sqrt() };
-            let d = cx * (((sx as f64 + 0.5 + dx) / 2.0 + x as f64) / width as f64 - 0.5)
-                  + cy * (((sy as f64 + 0.5 + dy) / 2.0 + y as f64) / height as f64 - 0.5)
-                  + cam.d;
-            let ray2 = Ray { o: cam.o + d * 130.0, d: d.norm() };
-            r = r + radiance(&ray2, 0, xi, &spheres) * (0.25 / samples as f64);
-            c[i] = c[i] + V(clamp(r.0), clamp(r.1), clamp(r.2)) * 0.25;
-          }
+  let mut pixels = vec![V(0.0, 0.0, 0.0); width * height];
+
+  let calc_pixel_value = |x, y| {
+    let mut c = V(0.0, 0.0, 0.0);
+    for sy in 0..2 {
+      for sx in 0..2 {
+        let mut r = V(0.0, 0.0, 0.0);
+        for _ in 0..samples {
+          let r1 = 2.0 * rand::random::<f64>();
+          let dx = if r1 < 1.0 { r1.sqrt() - 1.0 } else { 1.0 - (2.0 - r1).sqrt() };
+          let r2 = 2.0 * rand::random::<f64>();
+          let dy = if r2 < 1.0 { r2.sqrt() - 1.0 } else { 1.0 - (2.0 - r2).sqrt() };
+          let d = cx * (((sx as f64 + 0.5 + dx) / 2.0 + x as f64) / width as f64 - 0.5)
+                + cy * (((sy as f64 + 0.5 + dy) / 2.0 + y as f64) / height as f64 - 0.5)
+                + cam.d;
+          let ray2 = Ray { o: cam.o + d * 130.0, d: d.norm() };
+          r = r + radiance(&ray2, 0, (0,0,0), &spheres) * (1.0 / (samples * 50) as f64);
+          c = c + V(clamp(r.0), clamp(r.1), clamp(r.2)) * 0.25;
         }
       }
     }
+    c
+  };
+
+  {
+    let bands: Vec<(usize, &mut[V])> = pixels.chunks_mut(width).enumerate().collect();
+    bands.into_par_iter().for_each(|(y, band)| {
+      /* Broken with Rayon
+      print!("\rRendering ({} spp) {:10.7}%", samples * 4,
+            100.0 * (y as f64 / (height - 1) as f64));
+      std::io::stdout().flush().unwrap();
+      */
+      (0..band.len()).zip(band).for_each(|(x, buf)| {
+        let _i = (height - y - 1) * width + x;
+        *buf = calc_pixel_value(x, height - y);
+      });
+      print!(".");
+      std::io::stdout().flush().unwrap();
+    });
   }
+
   println!("\nRendering completed. Saving into a file...");
 
-  let mut f = BufWriter::new(fs::File::create("rs.ppm").unwrap());
-  f.write(format!("P3\n{} {}\n{}\n", width, height, 255).as_bytes());
-  for color in c {
-    f.write(format!("{} {} {} ", toInt(color.0), toInt(color.1), toInt(color.2)).as_bytes());
+  let filename = format!("images/rs.{}.ppm", samples);
+  let mut f = BufWriter::new(fs::File::create(filename).unwrap());
+  f.write(format!("P3\n{} {}\n{}\n", width, height, 255).as_bytes())
+   .expect("Failed to write PPM header");
+  for color in pixels {
+    f.write(format!("{} {} {} ", to_int(color.0), to_int(color.1), to_int(color.2)).as_bytes())
+     .expect("Failed to write out PPM data.");
   }
 
 }
