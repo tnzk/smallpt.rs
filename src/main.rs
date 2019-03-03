@@ -1,16 +1,13 @@
-extern crate rand;
-extern crate rayon;
-
-use rayon::prelude::*;
-
-use std::io::{self, Write, BufWriter};
 use std::str::FromStr;
+use std::io::{self, Write, BufWriter};
 use std::fs;
 
 use std::ops::Add;
 use std::ops::Mul;
 use std::ops::Sub;
 use std::ops::Rem;
+
+extern crate rand;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 struct V(f64, f64, f64); // Fields cannot have default value atm: https://github.com/rust-lang/rfcs/pull/1806
