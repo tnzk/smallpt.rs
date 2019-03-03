@@ -282,8 +282,8 @@ fn main() {
     Sphere { rad: 600.0,  p: V(50.0, 681.6-0.27, 81.6),e:V(12.0,12.0,12.0),  c: V(0.0,0.0,0.0),  refl: Reflection::DIFF} //Lite
   ];
 
-  let width = 200;
-  let height = 200;
+  let width = 1024;
+  let height = 768;
   let samples = match std::env::args().skip(1).next() {
     Some(s) => u32::from_str(&s).unwrap_or(4) / 4,
     None => 1,
@@ -293,30 +293,6 @@ fn main() {
   let cx = V(width as f64 * 0.5135 / height as f64, 0.0, 0.0);
   let cy = (cx % cam.d).norm() * 0.5135;
   let mut c = vec![V(0.0, 0.0, 0.0); width * height];
-
-  let pixel_value = |i:u32, x:u32, y:u32| {
-    let mut c = V(0.0, 0.0, 0.0);
-    let xi = (0, 0, 0);
-    for sy in 0..2 {
-      for sx in 0..2 {
-        let mut r = V(0.0, 0.0, 0.0);
-        for s in 0..samples {
-          let r1 = 2.0 * rand::random::<f64>();
-          let dx = if r1 < 1.0 { r1.sqrt() - 1.0 } else { 1.0 - (2.0 - r1).sqrt() };
-          let r2 = 2.0 * rand::random::<f64>();
-          let dy = if r2 < 1.0 { r2.sqrt() - 1.0 } else { 1.0 - (2.0 - r2).sqrt() };
-          let d = cx * (((sx as f64 + 0.5 + dx) / 2.0 + x as f64) / width as f64 - 0.5)
-                + cy * (((sy as f64 + 0.5 + dy) / 2.0 + y as f64) / height as f64 - 0.5)
-                + cam.d;
-          let ray2 = Ray { o: cam.o + d * 130.0, d: d.norm() };
-          r = r + radiance(&ray2, 0, xi, &spheres) * (0.25 / samples as f64);
-          c = c + V(clamp(r.0), clamp(r.1), clamp(r.2)) * 0.25;
-        }
-      }
-    }
-    (i, c)
-  };
-
   for y in 0..height {
     print!("\rRendering ({} spp) {:10.7}%", samples * 4,
            100.0 * (y as f64 / (height - 1) as f64));
@@ -324,8 +300,23 @@ fn main() {
     let xi = (0u16, 0u16, (y * y * y) as u16);
     for x in 0..width {
       let i = (height - y - 1) * width + x;
-      let pixel = pixel_value(i as u32, x as u32, y as u32);
-      c[i] = pixel.1;
+      for sy in 0..2 {
+        for sx in 0..2 {
+          let mut r = V(0.0, 0.0, 0.0);
+          for s in 0..samples {
+            let r1 = 2.0 * erand48(xi);
+            let dx = if r1 < 1.0 { r1.sqrt() - 1.0 } else { 1.0 - (2.0 - r1).sqrt() };
+            let r2 = 2.0 * erand48(xi);
+            let dy = if r2 < 1.0 { r2.sqrt() - 1.0 } else { 1.0 - (2.0 - r2).sqrt() };
+            let d = cx * (((sx as f64 + 0.5 + dx) / 2.0 + x as f64) / width as f64 - 0.5)
+                  + cy * (((sy as f64 + 0.5 + dy) / 2.0 + y as f64) / height as f64 - 0.5)
+                  + cam.d;
+            let ray2 = Ray { o: cam.o + d * 130.0, d: d.norm() };
+            r = r + radiance(&ray2, 0, xi, &spheres) * (0.25 / samples as f64);
+            c[i] = c[i] + V(clamp(r.0), clamp(r.1), clamp(r.2)) * 0.25;
+          }
+        }
+      }
     }
   }
   println!("\nRendering completed. Saving into a file...");
